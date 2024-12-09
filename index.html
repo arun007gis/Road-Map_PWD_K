@@ -1,0 +1,83 @@
+import geopandas as gpd
+import folium
+from folium import TileLayer
+from folium.plugins import MiniMap, MeasureControl, Fullscreen, LocateControl, Search, Geocoder
+
+# Load the shapefiles (ensure the paths are relative or update with the correct paths before running)
+shapefile_1_path = "1000km_whole.shp"  # Place shapefiles in the same directory as the script
+shapefile_2_path = "Whole_Network.shp"
+
+# Load shapefiles using GeoPandas
+shapefile_1 = gpd.read_file(shapefile_1_path)
+shapefile_2 = gpd.read_file(shapefile_2_path)
+
+# Desired projection: WGS 1984 UTM Zone 43N (EPSG:32643)
+target_crs = "EPSG:32643"
+
+# Reproject shapefiles if necessary
+if shapefile_1.crs != target_crs:
+    shapefile_1 = shapefile_1.to_crs(target_crs)
+
+if shapefile_2.crs != target_crs:
+    shapefile_2 = shapefile_2.to_crs(target_crs)
+
+# Calculate total length of the second shapefile in kilometers
+shapefile_2["length_km"] = shapefile_2.geometry.length / 1000  # Convert from meters to kilometers
+total_length = shapefile_2["length_km"].sum()
+
+# Reproject both shapefiles to WGS 84 (EPSG:4326) for folium compatibility
+shapefile_1 = shapefile_1.to_crs("EPSG:4326")
+shapefile_2 = shapefile_2.to_crs("EPSG:4326")
+
+# Calculate the combined bounding box (extent) of both shapefiles
+combined_bounds = shapefile_1.total_bounds.tolist() + shapefile_2.total_bounds.tolist()
+minx, miny = min(combined_bounds[0], combined_bounds[4]), min(combined_bounds[1], combined_bounds[5])
+maxx, maxy = max(combined_bounds[2], combined_bounds[6]), max(combined_bounds[3], combined_bounds[7])
+
+# Create a folium map centered on the extent's midpoint
+m = folium.Map(location=[(miny + maxy) / 2, (minx + maxx) / 2], zoom_start=12)
+
+# Add OpenStreetMap as a base map
+folium.TileLayer('OpenStreetMap').add_to(m)
+
+# Style function for the first shapefile (orange, thicker lines)
+style_shapefile_1 = lambda x: {"color": "orange", "weight": 4, "opacity": 1}
+
+# Style function for the second shapefile (black, thinner lines)
+style_shapefile_2 = lambda x: {"color": "black", "weight": 2, "opacity": 1}
+
+# Add shapefiles to the map with custom styles
+folium.GeoJson(
+    shapefile_1,
+    name="Road Network (Before Reconnaissance Survey)",
+    style_function=style_shapefile_1,
+).add_to(m)
+
+folium.GeoJson(
+    shapefile_2,
+    name="Road Network (After Reconnaissance Survey)",
+    style_function=style_shapefile_2,
+    tooltip=folium.GeoJsonTooltip(fields=["Road_Name"], aliases=["Road Name:"]),
+).add_to(m)
+
+# Add tools
+folium.plugins.MiniMap(toggle_display=True).add_to(m)
+folium.plugins.MeasureControl(primary_length_unit="meters", secondary_length_unit="kilometers").add_to(m)
+folium.plugins.Fullscreen().add_to(m)
+folium.plugins.LocateControl().add_to(m)
+
+# Add search control for shapefile 2
+folium.plugins.Search(
+    layer=folium.GeoJson(shapefile_2),
+    geom_type="LineString",
+    placeholder="Search for a road by name...",
+    collapsed=False,
+    search_label="Road_Name",
+).add_to(m)
+
+# Add layer control
+folium.LayerControl().add_to(m)
+
+# Save the map to an HTML file
+m.save("index.html")
+print("Map saved as 'index.html'.")
